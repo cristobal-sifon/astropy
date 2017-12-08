@@ -11,7 +11,6 @@ Heavily based on sextractor.py
 import re
 
 from . import core
-from . import fixedwidth
 
 
 
@@ -38,6 +37,8 @@ class ApJHeader(core.BaseHeader):
         # " 1- 15  <format> <units> short description"
         columns = {}
         colnumber = 0
+        # will only be used for the last couple lines before the
+        # column definitions
         lines_left = -1
         for data_start, line in enumerate(lines, 1):
             # this happens 2 lines before column definitions
@@ -55,11 +56,13 @@ class ApJHeader(core.BaseHeader):
                 break
             # ready to go
             if lines_left == 0:
+                print('line =', line, '({0})'.format(line[8]))
                 if line[8] != ' ':
                     msg = 'Each row is more than 999 bytes long; this is' \
                           ' not yet supported.'
                     raise NotImplementedError(msg)
                 colrange = line[:8].split('-')
+                print('colrange =', colrange)
                 colstart = int(colrange[0]) - 1
                 # single-byte columns do not specify a start and end
                 # but simply the column byte. In that case, the line
@@ -67,16 +70,16 @@ class ApJHeader(core.BaseHeader):
                 # below)
                 if len(colrange) == 1:
                     colend = colstart + 1
-                    n = 0
                 else:
                     colend = int(colrange[1]) - 1
-                    n = 1
-                words = line.split()
-                colunit = '1' if words[n+2] == '---' else words[n+2]
-                colname = words[n+3]
-                coldescr = ' '.join(words[n+4:])
+                # read the rest of the line
+                words = line[9:].split()
+                colunit = '1' if words[1] == '---' else words[1]
+                colname = words[2]
+                coldescr = ' '.join(words[3:])
                 columns[colnumber] = \
                     (colname, colstart, colend, coldescr, colunit)
+                print('column =', columns[colnumber])
                 colnumber += 1
 
             colnumbers = sorted(columns)
@@ -96,6 +99,12 @@ class ApJHeader(core.BaseHeader):
             col.description = columns[n][3]
             col.unit = columns[n][4]
             self.cols.append(col)
+
+
+class ApJData(core.BaseData):
+    start_line = 10
+    delimiter = ' '
+    comment = r'\s*#'
 
 
 class ApJ(core.BaseReader):

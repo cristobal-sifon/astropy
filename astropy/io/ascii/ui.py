@@ -21,6 +21,7 @@ from io import StringIO
 import numpy as np
 
 from . import core
+from . import apj
 from . import basic
 from . import cds
 from . import daophot
@@ -606,7 +607,8 @@ def _get_guess_kwargs_list(read_kwargs):
                               dict(Reader=sextractor.SExtractor),
                               dict(Reader=ipac.Ipac),
                               dict(Reader=latex.Latex),
-                              dict(Reader=latex.AASTex)
+                              dict(Reader=latex.AASTex),
+                              dict(Reader=apj.ApJ)
                               ])
 
     # Cycle through the basic-style readers using all combinations of delimiter
