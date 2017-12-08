@@ -11,6 +11,7 @@ Heavily based on sextractor.py
 import re
 
 from . import core
+from . import fixedwidth
 
 
 
@@ -34,18 +35,24 @@ class ApJHeader(core.BaseHeader):
         """
         # This assumes that the columns are listed in order, one per
         # line with a header comment string of the format:
-        # " 1- 15  <format> <units> short description
+        # " 1- 15  <format> <units> short description"
         columns = {}
         colnumber = 0
         lines_left = -1
-        for line in lines:
+        for data_start, line in enumerate(lines, 1):
             # this happens 2 lines before column definitions
             if line.split()[0] == 'Bytes':
                 lines_left = 1
+                continue
             # the line just before column definitions, if we already
             # found the line referenced above
-            if lines_left > 0 and line[:5] = '-'*5:
+            if lines_left > 0 and line[:5] == '-'*5:
                 lines_left = 0
+                continue
+            # once we've already read the column definitions, if we
+            # hit dashes again means header is over.
+            if lines_left == 0 and line[:5] == '-'*5:
+                break
             # ready to go
             if lines_left == 0:
                 if line[8] != ' ':
@@ -53,9 +60,13 @@ class ApJHeader(core.BaseHeader):
                           ' not yet supported.'
                     raise NotImplementedError(msg)
                 colrange = line[:8].split('-')
-                colstart = colrange[0] - 1
+                colstart = int(colrange[0]) - 1
+                # single-byte columns do not specify a start and end
+                # but simply the column byte. In that case, the line
+                # consequently has one fewer entry (controlled by `n`
+                # below)
                 if len(colrange) == 1:
-                    colend = int(colrange[0])
+                    colend = colstart + 1
                     n = 0
                 else:
                     colend = int(colrange[1]) - 1
@@ -65,50 +76,26 @@ class ApJHeader(core.BaseHeader):
                 colname = words[n+3]
                 coldescr = ' '.join(words[n+4:])
                 columns[colnumber] = \
-                    (colstart, colend, colname, coldescr, colunit)
+                    (colname, colstart, colend, coldescr, colunit)
                 colnumber += 1
 
             colnumbers = sorted(columns)
             self.names = []
             for n in colnumbers:
-                self.names.append(columns[n][2])
+                self.names.append(columns[n][0])
 
         if not self.names:
             raise core.InconsistentTableError(
-                'No column names found in SExtractor header')
+                'No column names found in ApJ header')
 
-        # do I need to pass column start and finish positions as well?
         self.cols = []
         for n in colnumbers:
-            col = core.Column(name=columns[n][2])
+            col = core.Column(name=columns[n][0])
+            col.start = columns[n][1]
+            col.end = columns[n][2]
             col.description = columns[n][3]
             col.unit = columns[n][4]
             self.cols.append(col)
-
-
-    def get_metadata(lines):
-        # Leaving this here just in case
-        # Store metadata, although this will not be passed through
-        # for the moment. These elements are always defined in the
-        # same order
-        title = ''
-        authors = ''
-        table_name = ''
-        notes = []
-
-        title = lines[0].replace('Authors: ', '')
-        for line in lines:
-            if not authors:
-                if line[:8] == 'Authors:':
-                    authors = line[9:]
-                else: # multi-line title
-                    title += line
-            if not table_name:
-                if line[:6] == 'Table:':
-                    table_name = line[7:]
-                else: # multi-line author list
-                    authors += line
-            #if table_name
 
 
 class ApJ(core.BaseReader):
@@ -168,6 +155,14 @@ class ApJ(core.BaseReader):
     data_class = ApJData
     # do I need to modify this one?
     inputter_class = core.ContinuationLinesInputter
+
+    def __init__(self, col_starts=None, col_ends=None, delimiter_pad=' ',
+                 bookend=True):
+        super().__init__()
+        self.data.splitter.delimiter_pad = delimiter_pad
+        self.data.splitter.bookend = bookend
+        self.header.col_starts = col_starts
+        self.header.col_ends = col_ends
 
     def read(self, table):
         """
